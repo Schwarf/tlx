@@ -19,6 +19,7 @@
 #define TLX_ALGORITHM_MULTISEQUENCE_PARTITION_HEADER
 
 #include <tlx/container/simple_vector.hpp>
+#include <tlx/math/integer_log2.hpp>
 #include <tlx/math/round_to_power_of_two.hpp>
 #include <algorithm>
 #include <cassert>
@@ -209,6 +210,9 @@ void multisequence_partition(const RanSeqs& begin_seqs, const RanSeqs& end_seqs,
     {
         n /= 2;
 
+        // n + 1 is a power of two throughout refinement.
+        const unsigned shift = integer_log2_floor(n + 1);
+
         const value_type* lmax = nullptr; // impossible to avoid the warning?
         for (diff_type i = 0; i < m; ++i)
         {
@@ -237,9 +241,9 @@ void multisequence_partition(const RanSeqs& begin_seqs, const RanSeqs& end_seqs,
 
         diff_type leftsize = 0;
         for (diff_type i = 0; i < m; ++i)
-            leftsize += a[i] / (n + 1);
+            leftsize += a[i] >> shift;
 
-        diff_type skew = rank / (n + 1) - leftsize;
+        diff_type skew = (rank >> shift) - leftsize;
 
         if (skew > 0)
         {
