@@ -41,6 +41,37 @@ namespace sort_strings_detail {
 
 static const size_t g_inssort_threshold = 32;
 
+// Count large inputs in independent streams to avoid serial increments when
+// many strings have the same character. Small inputs avoid the extra setup.
+template <typename CharacterAt>
+static inline void radixsort_count_uint8(size_t* counts, size_t size,
+                                         CharacterAt character_at)
+{
+    std::fill(counts, counts + 256, 0);
+    if (size < 4096)
+    {
+        for (size_t i = 0; i < size; ++i)
+            ++counts[character_at(i)];
+        return;
+    }
+
+    size_t counts1[256] = { 0 };
+    size_t counts2[256] = { 0 };
+    size_t counts3[256] = { 0 };
+    const size_t grouped_size = size - size % 4;
+    for (size_t i = 0; i < grouped_size; i += 4)
+    {
+        ++counts[character_at(i)];
+        ++counts1[character_at(i + 1)];
+        ++counts2[character_at(i + 2)];
+        ++counts3[character_at(i + 3)];
+    }
+    for (size_t i = grouped_size; i < size; ++i)
+        ++counts[character_at(i)];
+    for (size_t c = 0; c < 256; ++c)
+        counts[c] += counts1[c] + counts2[c] + counts3[c];
+}
+
 /******************************************************************************/
 // Out-of-place 8-bit radix-sort WITHOUT character caching.
 
@@ -59,9 +90,9 @@ struct RadixStep_CE0
         const StringSet& ss = strptr.active();
 
         // count character occurrences
-        std::fill(bkt_size, bkt_size + 256, 0);
-        for (Iterator i = ss.begin(); i != ss.end(); ++i)
-            ++bkt_size[ss.get_uint8(ss[i], depth)];
+        radixsort_count_uint8(bkt_size, ss.size(), [&](size_t i) {
+            return ss.get_uint8(ss[ss.begin() + i], depth);
+        });
 
         // prefix sum
         Iterator bkt_index[256];
@@ -209,12 +240,11 @@ struct RadixStep_CE2
         const size_t n = ss.size();
 
         // read characters and count character occurrences
-        std::fill(bkt_size, bkt_size + 256, 0);
         std::uint8_t* cc = charcache;
         for (Iterator i = ss.begin(); i != ss.end(); ++i, ++cc)
             *cc = ss.get_uint8(ss[i], depth);
-        for (cc = charcache; cc != charcache + n; ++cc)
-            ++bkt_size[static_cast<std::uint8_t>(*cc)];
+        radixsort_count_uint8(bkt_size, n,
+                             [&](size_t i) { return charcache[i]; });
 
         // prefix sum
         Iterator bkt_index[256];
@@ -571,12 +601,11 @@ struct RadixStep_CI2
         size_t size = ss.size();
 
         // read characters and count character occurrences
-        std::fill(bkt_size, bkt_size + 256, 0);
         std::uint8_t* cc = charcache;
         for (Iterator i = ss.begin(); i != ss.end(); ++i, ++cc)
             *cc = ss.get_uint8(ss[i], depth);
-        for (cc = charcache; cc != charcache + size; ++cc)
-            ++bkt_size[static_cast<std::uint8_t>(*cc)];
+        radixsort_count_uint8(bkt_size, size,
+                             [&](size_t i) { return charcache[i]; });
 
         // inclusive prefix sum
         size_t bkt[256];
